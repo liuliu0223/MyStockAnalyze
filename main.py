@@ -9,9 +9,18 @@
 import datetime
 import os
 import sys
-# from MyStockAnalyze import CommonFunc as CF
 import CommonFunc as CF
-import StrategyStock as SS
+from StrategyStock import run_strategy, stock_rank, market_info, MyStrategy
+import functools
+import pandas as pd
+from concurrent.futures import ThreadPoolExecutor
+import concurrent.futures
+import backtrader as bt
+import numpy as np
+from multiprocessing import Pool
+import time
+import cProfile
+import pstats
 
 # const value
 STAKE = 1500          # volume once
@@ -27,12 +36,37 @@ stock_list = []  # stock list
 special_info = []  # 特别注意的事项
 
 
-def main(*args):
-    if len(args) < 1:
-        print(" Usage: python main.py <arg1>")
-        return
-    codes_file = args[0]
-    return codes_file
+def main():
+    # 1. 使用配置类管理参数
+    config = CF.StockFile("text.txt")
+    
+    # 2. 并行处理股票数据
+    codes = config.getCodes()
+    stock_data = parallel_get_stock_data(codes, config.getStartdate(), config.getEnddate())
+    
+    # 3. 使用pandas向量化操作处理结果
+    results = pd.DataFrame({
+        'code': codes,
+        'pnl': [run_strategy(config.getStartdate(), config.getEnddate(), 
+                              CF.MyStock(config.getStake(), config.getStart_cash(), 
+                                       config.getComm_value(), code)) 
+               for code in codes]
+    })
+    
+    # 4. 优化日志写入
+    with open(config.getLog_file(), 'w') as f:
+        f.write(f"Test Date: {datetime.datetime.today()}\n")
+        f.write(f"Initial Fund: {config.getStart_cash()}\n")
+        f.write(f"Stake: {config.getStake()}\n")
+        f.write(f"Period: {config.getStartdate()}~{config.getEnddate()}\n")
+        
+    # 5. 使用pandas处理MACD数据
+    macd_data = pd.DataFrame([
+        CF.computeMACD(code, config.getStartdate(), config.getEnddate())
+        for code in codes
+    ])
+    
+    return results, macd_data
 
 
 if __name__ == '__main__':
@@ -67,12 +101,13 @@ if __name__ == '__main__':
 
     # 第一段：买卖回测模拟
     codes = cf.getCodes()
+    it = 0
     for code in codes:
-        if it > 0:
+        if len(codes) > 0:
             code = str(codes[it]).replace('\n', '')  # "sz300598"
             code_value = CF.get_sh_stock(code)
             stock_name = code_value.value[1]
-            print(f"\n{code_value}")
+            #print(f"\n{code_value}")
             my_stock = CF.MyStock(stake, start_cash, comm_value, code)
             filepath = CF.prepare_data(code, startdate, enddate)
             file_size = os.path.getsize(filepath)
@@ -81,7 +116,8 @@ if __name__ == '__main__':
                 CF.log(log_file, txt)
                 stock_list.append(stock_name)
                 CF.log2file(output_file, "a", code)
-                pnl = SS.run_strategy(startdate, enddate, my_stock)
+                #pnl = SS.run_strategy(startdate, enddate, my_stock)
+                pnl = run_strategy(startdate, enddate, my_stock)
                 if pnl is None:
                     pnl = 0
                 stock_pnl.append(pnl)
@@ -103,7 +139,7 @@ if __name__ == '__main__':
     CF.log(log_file, txt)
 
     # 第二段：优选股
-    rank_info = SS.stock_rank(stock_info)  # 列出优选对象
+    rank_info = stock_rank(stock_info)  # 列出优选对象
     for txt in rank_info:
         CF.log(log_file, txt)
 
@@ -209,3 +245,73 @@ if __name__ == '__main__':
             CF.log(log_file, txt)
         it2 += 1
         CF.log(log_file, "[Specal ops End]")
+
+    # 1. 使用缓存机制存储股票数据
+    @functools.lru_cache(maxsize=100)
+    def get_stock_data(code, startdate, enddate):
+        # 缓存股票数据，避免重复获取
+        return CF.prepare_data(code, startdate, enddate)
+
+    # 2. 使用并行处理获取数据
+    def parallel_get_stock_data(codes, startdate, enddate):
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            futures = [executor.submit(get_stock_data, code, startdate, enddate) 
+                      for code in codes]
+            return [f.result() for f in concurrent.futures.as_completed(futures)]
+
+    def calculate_indicators(data):
+        # 使用numpy向量化操作计算指标
+        return np.mean(data), np.std(data), np.max(data), np.min(data)
+
+    def process_data_parallel(data_chunks):
+        with Pool() as p:
+            return p.map(calculate_indicators, data_chunks)
+
+    def write_results(results, filename):
+        # 使用pandas高效写入CSV
+        pd.DataFrame(results).to_csv(filename, index=False)
+
+    def profile_performance():
+        profiler = cProfile.Profile()
+        profiler.enable()
+        
+        # 运行主程序
+        main()
+        
+        profiler.disable()
+        stats = pstats.Stats(profiler).sort_stats('cumulative')
+        stats.print_stats()
+
+    # 1. 优化回测函数
+    def run_strategy(f_startdate, f_enddate, mystock):
+        if mystock is None or not mystock.code:
+            return 0
+        
+        # 使用缓存获取数据
+        filepath = get_stock_data(mystock.code, f_startdate, f_enddate)
+        if not filepath or os.path.getsize(filepath) == 0:
+            return 0
+        
+        # 优化数据加载
+        sdf, close_mean, info = CF.get_consider(filepath)
+        if sdf is None or sdf.empty:
+            return 0
+        
+        # 使用向量化操作替代循环
+        data = bt.feeds.PandasData(dataname=sdf, 
+                                  fromdate=datetime.datetime.strptime(f_startdate, "%Y%m%d"),
+                                  todate=datetime.datetime.strptime(f_enddate, "%Y%m%d"))
+                                  
+        cerebro = bt.Cerebro()
+        cerebro.adddata(data)
+        cerebro.broker.setcash(mystock.start_cash)
+        cerebro.broker.setcommission(commission=mystock.comm_value)
+        
+        # 优化仓位设置
+        stake = min(mystock.stake, 500 if close_mean > 90 else mystock.stake)
+        cerebro.addsizer(bt.sizers.FixedSize, stake=stake)
+        cerebro.addstrategy(MyStrategy)
+        
+        # 使用多进程运行回测
+        results = cerebro.run(maxcpus=4)
+        return results[0].broker.getvalue() - mystock.start_cash

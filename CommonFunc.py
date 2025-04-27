@@ -249,7 +249,9 @@ def get_business_day(s_date, days=-1):
 
 def get_sh_stock(s_code):   # stock code must be begin with numeral, s_code=600602
     code = getcodebytype(s_code, ctype='Numeral')
+    #print('get_sh_stock:' + code)
     df = ak.stock_individual_info_em(symbol=code)
+    #df = ak.stock_individual_info_em(str(code))
     return df
 
 
@@ -473,6 +475,9 @@ def log2file(
         writemode: str = "w",
         txt: str = "",
 ):
+    if filename is None or len(filename)== 0:
+        filename =  datetime.datetime.now().strftime("%Y-%m-%d")
+        filename = os.getcwd() + '\\' + filename + '.txt'
     # 使用 'w' 模式打开文件，如果文件不存在则创建它，如果文件已存在则覆盖它
     with open(filename, writemode, encoding='utf-8') as file:
         file.write(f"{txt}\n")

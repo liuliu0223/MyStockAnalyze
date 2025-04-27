@@ -38,6 +38,10 @@ class MyStrategy(bt.Strategy):
         self.crossover_buy = False
         self.crossover_sell = False
         self.specialinfo = []  # 特别注意的事项
+        
+        # Volume Price Strategy indicators
+        self.volume_ma = bt.ind.SMA(period=20)  # 20日成交量均线
+        self.price_ma = bt.ind.SMA(period=20)   # 20日价格均线
 
     # 通用日志打印函数，可以打印下单、交易记录，非必须，可选
     def log(self, txt, dt=None):
@@ -89,6 +93,7 @@ class MyStrategy(bt.Strategy):
                 txt = 'SELL EXECUTED, Price: %.2f, Cost: %.2f, Comm %.2f, fund Value %.2f, pos Size %.2f' % \
                       (price, cost, comm, fund, pos)
                 self.log(txt)
+
         elif order.status in [order.Canceled, order.Margin, order.Rejected]:
             if order.status == order.Canceled:
                 self.log('order cancel!')
@@ -117,33 +122,35 @@ class MyStrategy(bt.Strategy):
         valid_cash = self.broker.getcash()
         fund = self.broker.getvalue()
         buy_comm = price * size * self.p.comm_value
+        txt = ''
         if not self.position:  # Outside, buy
             if self.crossover > 0:  # if golden cross, valid=datetime.datetime.now() + datetime.timedelta(days=3)
                 self.log('Available Cash: %.2f, Total fund: %.2f, pos: %.2f' % (valid_cash, fund, size))
-                self.order = self.buy()
-                txt = 'Outside, golden cross buy, close: %.2f，Total fund：%.2f, pos: %.0f' % \
+                #self.order = self.buy()
+                txt = 'Outside, golden cross buy, close: %.2f, Total fund:%.2f, pos: %.0f' % \
                       (self.data_close[0], fund, size)
-                self.is_special(self.datas[0].datetime.date(0), txt)
-                self.log('Outside, golden cross buy, close: %.2f，Total fund：%.2f, pos: %.2f' %
+                self.volume_price_strategy(volume_ratio=1.5, ma_period=20, position_steps=3, txt=txt)
+                #self.is_special(self.datas[0].datetime.date(0), txt)
+                self.log('Outside, golden cross buy, close: %.2f,Total fund:%.2f, pos: %.2f' %
                          (self.data_close[0], fund, size))
         else:
             if self.crossover > 0:
                 if (valid_cash - price * self.p.stake - buy_comm) > 0:
                     self.log('Available Cash: %.2f, Total fund: %.2f, pos: %.2f' % (valid_cash, fund, size))
-                    self.order = self.buy()
-                    self.is_special(self.datas[0].datetime.date(0),
-                                    'Outside, golden cross buy, close: %.2f，Total fund：%.2f， pos: %.2f' %
-                                    (self.data_close[0], valid_cash, size))
-                    self.log('Outside, golden cross buy, close: %.2f，Total fund：%.2f， pos: %.2f' %
+                    #self.order = self.buy()
+                    txt = 'Outside, golden cross buy, close: %.2f, Total fund:%.2f, pos: %.2f' %(self.data_close[0], valid_cash, size)
+                    self.volume_price_strategy(volume_ratio=1.5, ma_period=20, position_steps=3, txt=txt)
+                    #self.is_special(self.datas[0].datetime.date(0),txt)
+                    self.log('Outside, golden cross buy, close: %.2f, Total fund: %.2f, pos: %.2f' %
                              (self.data_close[0], valid_cash, size))
             elif self.crossover < 0:  # Inside and dead cross
                 if fund > self.p.start_cash * 1.03:
-                    self.order = self.close(size=size)
-                    self.is_special(self.datas[0].datetime.date(0),
-                                    'Inside dead cross, sell, close: %.2f，Total fund：%.2f, pos: %.2f' %
-                                    (self.data_close[0], fund, size))
-                    self.log('Inside dead cross, sell, close:  %.2f，Total fund：%.2f, pos: %.2f' %
-                             (self.data_close[0], fund, size))
+                    #self.order = self.close(size=size)
+                    txt ='Inside dead cross, sell, close: %.2f,Total fund:%.2f, pos: %.2f' %(self.data_close[0], fund, size)
+                    self.volume_price_strategy(volume_ratio=1.5, ma_period=20, position_steps=3, txt=txt)
+                    #self.is_special(self.datas[0].datetime.date(0),txt)
+                    self.log('Inside dead cross, sell, close:  %.2f, Total fund: %.2f, pos: %.2f' %
+                             (self.data_close[0], fund, size))                    
 
     # 策略结束后的清理工作
     def stop(self):
@@ -157,6 +164,61 @@ class MyStrategy(bt.Strategy):
                 for ops in special_info:
                     txt = "Special_info: date=" + ops['date'] + ", " + ops['info'] + ", " + ops['operator']
                     CF.log2file(output_file, "a", txt)
+
+    def volume_price_strategy(self, volume_ratio=1.5, ma_period=20, position_steps=3, txt=''):
+        """
+        基于量价关系的交易策略
+        
+        参数:
+        volume_ratio: float, 放量的标准，默认1.5倍
+        ma_period: int, 均线周期，默认20日
+        position_steps: int, 分批建仓的次数，默认3次
+        """
+        # 获取当前价格和成交量
+        current_price = self.data.close[0]
+        current_volume = self.data.volume[0]
+        ma_price = self.price_ma[0]
+        ma_volume = self.volume_ma[0]
+        
+        # 判断是否为低位（价格低于均线）
+        is_low_price = current_price < ma_price
+        # 判断是否为高位（价格高于均线）
+        is_high_price = current_price > ma_price
+        # 判断是否放量（成交量大于均量的volume_ratio倍）
+        is_high_volume = current_volume > (ma_volume * volume_ratio)
+        # 判断是否缩量（成交量小于均量）
+        is_low_volume = current_volume < ma_volume
+        
+        # 获取当前仓位
+        current_position = self.position.size
+        
+        # 低位缩量，分批建仓
+        if is_low_price and is_low_volume and current_position < self.p.stake:
+            position_increment = self.p.stake / position_steps
+            if self.broker.getcash() > position_increment * self.data.close[0]:
+                self.order = self.buy(size=position_increment)
+                self.is_special(self.datas[0].datetime.date(0),
+                                    txt+','+'Buy at lower levels with decreasing volume, and build positions in batches')
+                self.log(txt+','+'Buy at lower levels with decreasing volume, and build positions in batches')
+                
+        # 低位放量，满仓买入
+        elif is_low_price and is_high_volume and current_position < self.p.stake:
+            if self.broker.getcash() > self.p.stake * self.data.close[0]:
+                self.order = self.buy(size=self.p.stake - current_position)
+                self.is_special(self.datas[0].datetime.date(0),
+                                    txt+','+'Buy at low levels with high volume, and go all-in')
+                self.log(txt+','+'Buy at low levels with high volume, and go all-in')
+                
+        # 高位放量，清仓卖出
+        elif is_high_price and is_high_volume and current_position > 0:
+            self.order = self.close()
+            self.is_special(self.datas[0].datetime.date(0),
+                                    txt+','+'Sell at high levels with high volume and liquidate your position')
+            self.log(txt+','+'Sell at high levels with high volume and liquidate your position')
+        else:
+            self.is_special(self.datas[0].datetime.date(0),
+                                    txt+','+'No change, signal: no change')
+            self.log(txt+','+'No change, signal: no change')
 
 
 # sorted by strategy result
