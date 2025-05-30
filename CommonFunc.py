@@ -403,8 +403,9 @@ def trendMACD(code, df, period=3):
 
 
 # get the stock information from csv file, then to calculate the stock's min, max, std and mean value
-def get_consider(f_filepath):
-    file_path = f_filepath
+def get_consider(f_code, f_startdate, f_enddate):
+    file_path = prepare_data(f_code, f_startdate, f_enddate)
+
     sdf = pd.read_csv(file_path, parse_dates=True, index_col='date')
     sdf.index = pd.to_datetime(sdf.index, format="%Y-%m-%d", utc=True)
 
@@ -426,27 +427,46 @@ def get_consider(f_filepath):
     close_min = np.min(close_list)
     close_std = np.std(close_list)
     close_mean = np.mean(close_list)
-    print('Max median value: {:.2f}, max value: {:.2f}, max std: {:.2f}, max mean: {:.2f}'.format(max_median,
+
+    # 计算原始中位数
+    original_max_median = np.median(max_list)
+    # 筛选出大于等于中位数的数值
+    max_subset = [num for num in max_list if num >= original_max_median]
+    # 计算high列中子集的中位数
+    max_subset_median = np.median(max_subset)
+
+    # 计算原始中位数
+    original_min_median = np.median(min_list)
+    # 筛选出大于等于中位数的数值
+    min_subset = [num for num in min_list if num <= original_min_median]
+    # 计算high列中子集的中位数
+    min_subset_median = np.median(min_subset)
+
+    print('Max median value: {:.2f}, max value: {:.2f}, max std: {:.2f}, max mean: {:.2f}, max_subset_median: {:.2f}'.format(max_median,
                                                                                                   max_value,
                                                                                                   max_std,
-                                                                                                  max_mean))
-    print('Min median value: {:.2f}, min value: {:.2f}, min std: {:.2f}, min mean: {:.2f}'.format(min_median,
+                                                                                                  max_mean,
+                                                                                                  max_subset_median))
+    print('Min median value: {:.2f}, min value: {:.2f}, min std: {:.2f}, min mean: {:.2f}, min_subset_median: {:.2f}'.format(min_median,
                                                                                                   min_value,
                                                                                                   min_std,
-                                                                                                  min_mean))
+                                                                                                  min_mean,
+                                                                                                  min_subset_median))
     print('Close median value: {:.2f}, Close value: {:.2f}, Close std: {:.2f}, Close mean: {:.2f}'.format(close_median,
                                                                                                           close_max,
                                                                                                           close_min,
                                                                                                           close_std,
                                                                                                           close_mean))
-    txt1 = 'Max median value: {:.2f}, max value: {:.2f}, max std: {:.2f}, max mean: {:.2f}'.format(max_median,
+    txt1 = 'Max median value: {:.2f}, max value: {:.2f}, max std: {:.2f}, max mean: {:.2f}, max_subset_median: {:.2f}'.format(max_median,
                                                                                                   max_value,
                                                                                                   max_std,
-                                                                                                  max_mean)
-    txt2 = 'Min median value: {:.2f}, min value: {:.2f}, min std: {:.2f}, min mean: {:.2f}'.format(min_median,
+                                                                                                  max_mean,
+                                                                                                  max_subset_median)
+    txt2 = 'Min median value: {:.2f}, min value: {:.2f}, min std: {:.2f}, min mean: {:.2f}, min_subset_median: {:.2f}'.format(min_median,
                                                                                                   min_value,
                                                                                                   min_std,
-                                                                                                  min_mean)
+                                                                                                  min_mean,
+                                                                                                  min_subset_median)
     txt3 = 'Close median value: {:.2f}, Close value: {:.2f}, Close std: {:.2f}, Close mean: {:.2f}'.format(close_median,
                                                                                                           close_max,
                                                                                                           close_min,

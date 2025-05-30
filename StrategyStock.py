@@ -131,25 +131,25 @@ class MyStrategy(bt.Strategy):
                       (self.data_close[0], fund, size)
                 self.volume_price_strategy(volume_ratio=1.5, ma_period=20, position_steps=3, txt=txt)
                 #self.is_special(self.datas[0].datetime.date(0), txt)
-                self.log('Outside, golden cross buy, close: %.2f,Total fund:%.2f, pos: %.2f' %
+                self.log('Outside, golden cross, close: %.2f,Total fund:%.2f, pos: %.2f' %
                          (self.data_close[0], fund, size))
         else:
             if self.crossover > 0:
                 if (valid_cash - price * self.p.stake - buy_comm) > 0:
                     self.log('Available Cash: %.2f, Total fund: %.2f, pos: %.2f' % (valid_cash, fund, size))
                     #self.order = self.buy()
-                    txt = 'Outside, golden cross buy, close: %.2f, Total fund:%.2f, pos: %.2f' %(self.data_close[0], valid_cash, size)
+                    txt = 'Outside, golden cross, close: %.2f, Total fund:%.2f, pos: %.2f' %(self.data_close[0], valid_cash, size)
                     self.volume_price_strategy(volume_ratio=1.5, ma_period=20, position_steps=3, txt=txt)
                     #self.is_special(self.datas[0].datetime.date(0),txt)
-                    self.log('Outside, golden cross buy, close: %.2f, Total fund: %.2f, pos: %.2f' %
+                    self.log('Outside, golden cross, close: %.2f, Total fund: %.2f, pos: %.2f' %
                              (self.data_close[0], valid_cash, size))
             elif self.crossover < 0:  # Inside and dead cross
                 if fund > self.p.start_cash * 1.03:
                     #self.order = self.close(size=size)
-                    txt ='Inside dead cross, sell, close: %.2f,Total fund:%.2f, pos: %.2f' %(self.data_close[0], fund, size)
+                    txt ='Inside dead cross, close: %.2f,Total fund:%.2f, pos: %.2f' %(self.data_close[0], fund, size)
                     self.volume_price_strategy(volume_ratio=1.5, ma_period=20, position_steps=3, txt=txt)
                     #self.is_special(self.datas[0].datetime.date(0),txt)
-                    self.log('Inside dead cross, sell, close:  %.2f, Total fund: %.2f, pos: %.2f' %
+                    self.log('Inside dead cross, close:  %.2f, Total fund: %.2f, pos: %.2f' %
                              (self.data_close[0], fund, size))                    
 
     # 策略结束后的清理工作
@@ -264,8 +264,8 @@ def run_strategy(f_startdate, f_enddate, mystock):
         if (code is None) or (len(code) == 0):
             print("mystock.code is not valid!! pls check")
             return
-        filepath = CF.get_file(code)
-        sdf, close_mean, info = CF.get_consider(filepath)
+
+        sdf, close_mean, info = CF.get_consider(code, f_startdate, f_enddate)
         from_date = datetime.datetime.strptime(f_startdate, "%Y%m%d")
         end_date = datetime.datetime.strptime(f_enddate, "%Y%m%d")
         data = bt.feeds.PandasData(dataname=sdf, fromdate=from_date, todate=end_date)  # 加载数据

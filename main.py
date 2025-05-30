@@ -107,7 +107,7 @@ if __name__ == '__main__':
             code = str(codes[it]).replace('\n', '')  # "sz300598"
             code_value = CF.get_sh_stock(code)
             stock_name = code_value.value[1]
-            #print(f"\n{code_value}")
+            print(f"\n{code_value}")
             my_stock = CF.MyStock(stake, start_cash, comm_value, code)
             filepath = CF.prepare_data(code, startdate, enddate)
             file_size = os.path.getsize(filepath)
@@ -238,9 +238,8 @@ if __name__ == '__main__':
             it3 += 1
         # MACD均线 操作提醒结束
 
-        filepath = CF.get_file(s_code)  # code needs sh or sz
         # 第四段：特殊操作关注的均值，极值提示
-        df, close_mean, info = CF.get_consider(filepath)
+        df, close_mean, info = CF.get_consider(s_code, startdate, enddate)
         for txt in info:
             CF.log(log_file, txt)
         it2 += 1
@@ -293,7 +292,7 @@ if __name__ == '__main__':
             return 0
         
         # 优化数据加载
-        sdf, close_mean, info = CF.get_consider(filepath)
+        sdf, close_mean, info = CF.get_consider(mystock.code, f_startdate, f_enddate)
         if sdf is None or sdf.empty:
             return 0
         
@@ -315,3 +314,4 @@ if __name__ == '__main__':
         # 使用多进程运行回测
         results = cerebro.run(maxcpus=4)
         return results[0].broker.getvalue() - mystock.start_cash
+
